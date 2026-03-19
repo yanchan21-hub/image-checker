@@ -5,33 +5,83 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>画像校正チェック</title>
   <style>
-    body { font-family: sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.6; }
-    textarea, input, button { width: 100%; margin-top: 8px; margin-bottom: 16px; padding: 10px; box-sizing: border-box; }
-    textarea { min-height: 140px; }
-    .row { margin-bottom: 20px; }
-    pre { background: #f6f6f6; padding: 16px; overflow: auto; white-space: pre-wrap; }
-    button { cursor: pointer; }
+    body {
+      font-family: sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 0 16px;
+      line-height: 1.6;
+    }
+    h1 {
+      margin-bottom: 24px;
+    }
+    .row {
+      margin-bottom: 20px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 8px;
+    }
+    textarea, input, button {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 10px;
+      font-size: 14px;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    button {
+      cursor: pointer;
+      margin-top: 8px;
+    }
+    pre {
+      background: #f6f6f6;
+      padding: 16px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      border-radius: 8px;
+    }
+    .hint {
+      color: #666;
+      font-size: 13px;
+      margin-top: 6px;
+    }
+    img {
+      max-width: 100%;
+      height: auto;
+      margin-top: 12px;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+    }
   </style>
 </head>
 <body>
   <h1>画像校正・商品情報照合</h1>
 
   <div class="row">
-    <label>画像</label>
-    <input type="file" id="imageFile" accept="image/*" />
+    <label for="imageFile">画像</label>
+    <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" />
+    <div class="hint">PNG / JPG / GIF / WEBP を選択</div>
+    <img id="preview" style="display:none;" alt="プレビュー" />
   </div>
 
   <div class="row">
-    <label>正式情報（スプシコピー）</label>
+    <label for="officialText">正式情報（スプシコピー）</label>
     <textarea id="officialText" placeholder="商品名、価格、容量、発売日などを貼り付け"></textarea>
   </div>
 
   <div class="row">
-    <label>参照URL（任意）</label>
+    <label for="referenceUrl">参照URL（任意）</label>
     <input type="text" id="referenceUrl" placeholder="https://example.com" />
   </div>
 
-  <button id="runBtn">チェック実行</button>
+  <div class="row">
+    <button id="runBtn">チェック実行</button>
+  </div>
 
   <h2>結果</h2>
   <pre id="result">ここに結果が表示されます</pre>
@@ -50,11 +100,26 @@
       });
     }
 
+    const imageInput = document.getElementById("imageFile");
+    const preview = document.getElementById("preview");
+    const resultEl = document.getElementById("result");
+
+    imageInput.addEventListener("change", () => {
+      const file = imageInput.files[0];
+      if (!file) {
+        preview.style.display = "none";
+        preview.src = "";
+        return;
+      }
+      const objectUrl = URL.createObjectURL(file);
+      preview.src = objectUrl;
+      preview.style.display = "block";
+    });
+
     document.getElementById("runBtn").addEventListener("click", async () => {
-      const file = document.getElementById("imageFile").files[0];
+      const file = imageInput.files[0];
       const officialText = document.getElementById("officialText").value;
       const referenceUrl = document.getElementById("referenceUrl").value;
-      const resultEl = document.getElementById("result");
 
       if (!file) {
         resultEl.textContent = "画像を選択してください。";
@@ -63,23 +128,40 @@
 
       resultEl.textContent = "チェック中...";
 
-      const imageBase64 = await fileToBase64(file);
+      try {
+        const imageBase64 = await fileToBase64(file);
 
-      const payload = {
-        image_base64: imageBase64,
-        mime_type: file.type,
-        official_text: officialText,
-        reference_url: referenceUrl
-      };
+        const payload = {
+          image_base64: imageBase64,
+          mime_type: file.type,
+          official_text: officialText,
+          reference_url: referenceUrl
+        };
 
-      const res = await fetch("/api/check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
+        const res = await fetch("/api/check", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(payload)
+        });
 
-      const data = await res.json();
-      resultEl.textContent = JSON.stringify(data, null, 2);
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultEl.textContent = JSON.stringify({
+            status: res.status,
+            error: data
+          }, null, 2);
+          return;
+        }
+
+        resultEl.textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        resultEl.textContent = JSON.stringify({
+          error: String(error)
+        }, null, 2);
+      }
     });
   </script>
 </body>
