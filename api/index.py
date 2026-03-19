@@ -2,8 +2,10 @@ import os
 import json
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from openai import OpenAI
 from google.oauth2 import service_account
@@ -115,9 +117,11 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
     ).execute()
 
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
 @app.get("/")
 def root():
-    return {"message": "API is working"}
+    return FileResponse(BASE_DIR / "index.html")
 
 
 @app.get("/api/check")
