@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>画像校正チェック</title>
+  <style>
+    body { font-family: sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.6; }
+    textarea, input, button { width: 100%; margin-top: 8px; margin-bottom: 16px; padding: 10px; box-sizing: border-box; }
+    textarea { min-height: 140px; }
+    .row { margin-bottom: 20px; }
+    pre { background: #f6f6f6; padding: 16px; overflow: auto; white-space: pre-wrap; }
+    button { cursor: pointer; }
+  </style>
+</head>
+<body>
+  <h1>画像校正・商品情報照合</h1>
+
+  <div class="row">
+    <label>画像</label>
+    <input type="file" id="imageFile" accept="image/*" />
+  </div>
+
+  <div class="row">
+    <label>正式情報（スプシコピー）</label>
+    <textarea id="officialText" placeholder="商品名、価格、容量、発売日などを貼り付け"></textarea>
+  </div>
+
+  <div class="row">
+    <label>参照URL（任意）</label>
+    <input type="text" id="referenceUrl" placeholder="https://example.com" />
+  </div>
+
+  <button id="runBtn">チェック実行</button>
+
+  <h2>結果</h2>
+  <pre id="result">ここに結果が表示されます</pre>
+
+  <script>
+    async function fileToBase64(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          const base64 = result.split(",")[1];
+          resolve(base64);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document.getElementById("runBtn").addEventListener("click", async () => {
+      const file = document.getElementById("imageFile").files[0];
+      const officialText = document.getElementById("officialText").value;
+      const referenceUrl = document.getElementById("referenceUrl").value;
+      const resultEl = document.getElementById("result");
+
+      if (!file) {
+        resultEl.textContent = "画像を選択してください。";
+        return;
+      }
+
+      resultEl.textContent = "チェック中...";
+
+      const imageBase64 = await fileToBase64(file);
+
+      const payload = {
+        image_base64: imageBase64,
+        mime_type: file.type,
+        official_text: officialText,
+        reference_url: referenceUrl
+      };
+
+      const res = await fetch("/api/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      resultEl.textContent = JSON.stringify(data, null, 2);
+    });
+  </script>
+</body>
+</html>
