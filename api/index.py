@@ -1,17 +1,11 @@
 import os
 import json
 from datetime import datetime, timezone, timedelta
-from pathlib import Path
 from typing import Any, Dict
-
-from dotenv import load_dotenv
-
-load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from openai import OpenAI
-
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
@@ -81,11 +75,13 @@ RESPONSE_SCHEMA_EXAMPLE = {
     }
 }
 
+
 class CheckRequest(BaseModel):
     image_base64: str
     mime_type: str
     official_text: str
     reference_url: str | None = ""
+
 
 def get_sheets_service():
     raw = os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"]
@@ -95,6 +91,7 @@ def get_sheets_service():
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
     return build("sheets", "v4", credentials=creds)
+
 
 def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> None:
     service = get_sheets_service()
@@ -116,6 +113,17 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
         insertDataOption="INSERT_ROWS",
         body={"values": row},
     ).execute()
+
+
+@app.get("/")
+def root():
+    return {"message": "API is working"}
+
+
+@app.get("/api/check")
+def healthcheck():
+    return {"message": "ok"}
+
 
 @app.post("/api/check")
 def check(req: CheckRequest):
