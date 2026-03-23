@@ -128,57 +128,79 @@
         reader.readAsDataURL(file);
       });
     }
-
+  
     const imageInput = document.getElementById("imageFile");
+    const dropZone = document.getElementById("dropZone");
     const previewContainer = document.getElementById("previewContainer");
     const resultEl = document.getElementById("result");
-    const dropZone = document.getElementById("dropZone");
-
-    dropZone.addEventListener("drop", (e) => {
-      e.preventDefault();
-      dropZone.classList.remove("dragover");
-
-  const files = Array.from(e.dataTransfer.files || []).filter((file) =>
-    ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)
-  );
-
-  if (files.length === 0) {
-    resultEl.textContent = "画像ファイルのみドロップできます。";
-    return;
-  }
-
-  selectedFiles = files;
-  renderPreviews(selectedFiles);
-});
+  
     let previewUrls = [];
-
-    imageInput.addEventListener("change", () => {
+    let selectedFiles = [];
+  
+    function renderPreviews(files) {
       previewUrls.forEach((u) => URL.revokeObjectURL(u));
       previewUrls = [];
       previewContainer.innerHTML = "";
-      const files = Array.from(imageInput.files || []);
+  
       files.forEach((file) => {
         const url = URL.createObjectURL(file);
         previewUrls.push(url);
+  
         const img = document.createElement("img");
         img.src = url;
         img.alt = "プレビュー";
         previewContainer.appendChild(img);
       });
+    }
+  
+    imageInput.addEventListener("change", () => {
+      selectedFiles = Array.from(imageInput.files || []);
+      renderPreviews(selectedFiles);
     });
-
+  
+    ["dragenter", "dragover"].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.add("dragover");
+      });
+    });
+  
+    ["dragleave", "dragend", "drop"].forEach((eventName) => {
+      dropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dropZone.classList.remove("dragover");
+      });
+    });
+  
+    dropZone.addEventListener("drop", (e) => {
+      const files = Array.from(e.dataTransfer.files || []).filter((file) =>
+        ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)
+      );
+  
+      if (files.length === 0) {
+        resultEl.textContent = "画像ファイルのみドロップできます。";
+        return;
+      }
+  
+      selectedFiles = files;
+      renderPreviews(selectedFiles);
+      resultEl.textContent = `${selectedFiles.length}枚の画像を読み込みました。`;
+    });
+  
     document.getElementById("runBtn").addEventListener("click", async () => {
-      const files = Array.from(imageInput.files || []);
+      const files = selectedFiles;
       const officialText = document.getElementById("officialText").value;
       const referenceUrl = document.getElementById("referenceUrl").value;
-
+  
       if (files.length === 0) {
         resultEl.textContent = "画像を1枚以上選択してください。";
         return;
       }
-
+  
       resultEl.textContent = "チェック中...";
-
+  
       try {
         const images = [];
         for (const file of files) {
@@ -188,13 +210,13 @@
             mime_type: file.type || "image/png"
           });
         }
-
+  
         const payload = {
           images,
           official_text: officialText,
           reference_url: referenceUrl
         };
-
+  
         const res = await fetch("/api/check", {
           method: "POST",
           headers: {
@@ -202,9 +224,9 @@
           },
           body: JSON.stringify(payload)
         });
-
+  
         const data = await res.json();
-
+  
         if (!res.ok) {
           resultEl.textContent = JSON.stringify({
             status: res.status,
@@ -212,7 +234,7 @@
           }, null, 2);
           return;
         }
-
+  
         resultEl.textContent = JSON.stringify(data, null, 2);
       } catch (error) {
         resultEl.textContent = JSON.stringify({
@@ -221,5 +243,5 @@
       }
     });
   </script>
-</body>
+  </body>
 </html>
