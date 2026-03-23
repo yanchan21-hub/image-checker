@@ -132,6 +132,24 @@
     const imageInput = document.getElementById("imageFile");
     const previewContainer = document.getElementById("previewContainer");
     const resultEl = document.getElementById("result");
+    const dropZone = document.getElementById("dropZone");
+
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.classList.remove("dragover");
+
+  const files = Array.from(e.dataTransfer.files || []).filter((file) =>
+    ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)
+  );
+
+  if (files.length === 0) {
+    resultEl.textContent = "画像ファイルのみドロップできます。";
+    return;
+  }
+
+  selectedFiles = files;
+  renderPreviews(selectedFiles);
+});
     let previewUrls = [];
 
     imageInput.addEventListener("change", () => {
