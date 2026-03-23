@@ -82,6 +82,24 @@
       border-radius: 8px;
       object-fit: contain;
     }
+    #officialPreviewContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    #officialPreviewContainer img {
+      max-height: 160px;
+      max-width: 100%;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      object-fit: contain;
+    }
+    .btn-secondary {
+      margin-top: 8px;
+      background: #f0f0f0;
+      border: 1px solid #ccc;
+    }
     .result-card {
   background: #f8f8f8;
   border: 1px solid #ddd;
@@ -165,8 +183,19 @@
   </div>
 
   <div class="row">
-    <label for="officialText">正式情報（スプシコピー）</label>
-    <textarea id="officialText" placeholder="商品名、価格、容量、発売日などを貼り付け"></textarea>
+    <div style="font-weight:bold;margin-bottom:8px;">正式情報</div>
+    <div class="hint" style="margin-bottom:8px;">
+      次のいずれか（または両方）: <strong>テキスト貼り付け</strong>／<strong>スプシや公式情報のスクショ</strong>。
+      どちらか片方だけでも利用可。両方ある場合は<strong>テキストを優先</strong>し、スクショは<strong>補助</strong>として判定に使います。
+    </div>
+    <label for="officialText" style="font-weight:bold;">① テキスト貼り付け（スプシコピーなど）</label>
+    <textarea id="officialText" placeholder="任意。貼り付けない場合は下のスクショのみでも可"></textarea>
+    <label for="officialImageFile" style="margin-top:12px;">② スプシ・公式情報のスクショ（任意・複数可）</label>
+    <input type="file" id="officialImageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+    <div class="hint">「取り込み」で①にテキスト反映可能。取り込まず②だけでも照合できます。①と②があるときは①が正、②は補助です。</div>
+    <div id="officialPreviewContainer"></div>
+    <button type="button" id="importOfficialBtn" class="btn-secondary">スクショから正式情報を取り込む（テキスト欄に反映）</button>
+    <p id="officialImportStatus" class="hint" style="margin-top:8px;"></p>
   </div>
 
   <div class="row">
@@ -179,7 +208,7 @@
   </div>
 
   <h2>結果</h2>
-  <pre id="result">ここに結果が表示されます</pre>
+  <div id="result">ここに結果が表示されます</div>
 
   <script>
     async function fileToBase64(file) {
@@ -275,10 +304,15 @@ function renderResult(data) {
     const imageInput = document.getElementById("imageFile");
     const dropZone = document.getElementById("dropZone");
     const previewContainer = document.getElementById("previewContainer");
+    const officialImageInput = document.getElementById("officialImageFile");
+    const officialPreviewContainer = document.getElementById("officialPreviewContainer");
+    const officialImportStatus = document.getElementById("officialImportStatus");
     const resultEl = document.getElementById("result");
   
     let previewUrls = [];
     let selectedFiles = [];
+    let officialPreviewUrls = [];
+    let selectedOfficialFiles = [];
   
     function renderPreviews(files) {
       previewUrls.forEach((u) => URL.revokeObjectURL(u));
@@ -299,6 +333,59 @@ function renderResult(data) {
     imageInput.addEventListener("change", () => {
       selectedFiles = Array.from(imageInput.files || []);
       renderPreviews(selectedFiles);
+    });
+
+    function renderOfficialPreviews(files) {
+      officialPreviewUrls.forEach((u) => URL.revokeObjectURL(u));
+      officialPreviewUrls = [];
+      officialPreviewContainer.innerHTML = "";
+      files.forEach((file) => {
+        const url = URL.createObjectURL(file);
+        officialPreviewUrls.push(url);
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "正式情報プレビュー";
+        officialPreviewContainer.appendChild(img);
+      });
+    }
+
+    officialImageInput.addEventListener("change", () => {
+      selectedOfficialFiles = Array.from(officialImageInput.files || []);
+      renderOfficialPreviews(selectedOfficialFiles);
+      officialImportStatus.textContent = "";
+    });
+
+    document.getElementById("importOfficialBtn").addEventListener("click", async () => {
+      officialImportStatus.textContent = "";
+      if (selectedOfficialFiles.length === 0) {
+        officialImportStatus.textContent = "正式情報用の画像を1枚以上選択してください。";
+        return;
+      }
+      officialImportStatus.textContent = "テキストを取り込み中...";
+      try {
+        const images = [];
+        for (const file of selectedOfficialFiles) {
+          images.push({
+            image_base64: await fileToBase64(file),
+            mime_type: file.type || "image/png"
+          });
+        }
+        const res = await fetch("/api/extract-official", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          officialImportStatus.textContent =
+            "取り込みエラー: " + (data.detail ? JSON.stringify(data.detail) : JSON.stringify(data));
+          return;
+        }
+        document.getElementById("officialText").value = data.text || "";
+        officialImportStatus.textContent = "取り込みが完了しました。必要なら編集してからチェック実行してください。";
+      } catch (err) {
+        officialImportStatus.textContent = "通信エラー: " + String(err);
+      }
     });
   
     ["dragenter", "dragover"].forEach((eventName) => {
@@ -338,7 +425,13 @@ function renderResult(data) {
       const referenceUrl = document.getElementById("referenceUrl").value;
   
       if (files.length === 0) {
-        resultEl.textContent = "画像を1枚以上選択してください。";
+        resultEl.textContent = "チェック対象の画像を1枚以上選択してください。";
+        return;
+      }
+
+      if (!officialText.trim() && selectedOfficialFiles.length === 0) {
+        resultEl.textContent =
+          "正式情報は、テキスト貼り付けとスクショのどちらか一方以上を指定してください。";
         return;
       }
   
@@ -353,10 +446,19 @@ function renderResult(data) {
             mime_type: file.type || "image/png"
           });
         }
+
+        const official_images = [];
+        for (const file of selectedOfficialFiles) {
+          official_images.push({
+            image_base64: await fileToBase64(file),
+            mime_type: file.type || "image/png"
+          });
+        }
   
         const payload = {
           images,
           official_text: officialText,
+          official_images,
           reference_url: referenceUrl
         };
   

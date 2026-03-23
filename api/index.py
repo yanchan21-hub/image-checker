@@ -85,8 +85,27 @@ class ImagePart(BaseModel):
 
 class CheckRequest(BaseModel):
     images: list[ImagePart] = Field(..., min_length=1)
-    official_text: str
+    official_text: str = ""
+    official_images: list[ImagePart] = Field(default_factory=list)
     reference_url: str | None = ""
+
+
+class ExtractOfficialRequest(BaseModel):
+    images: list[ImagePart] = Field(..., min_length=1)
+
+
+EXTRACT_OFFICIAL_PROMPT = """
+画像はスプレッドシート・表・または公式情報のスクリーンショットです。
+表示されている文字をできるだけ正確に転記してください。
+
+ルール:
+・推測で補わない。判読できない字は「?」にする
+・表は行ごとに改行し、列はタブ（\\t）で区切る
+・説明文や前置きは書かない
+
+出力は JSON のみ。形式は次の1オブジェクト:
+{"text": "転記した全文（改行は \\n）"}
+"""
 
 
 def get_sheets_service():
@@ -134,17 +153,85 @@ def healthcheck():
     return {"message": "ok"}
 
 
+@app.post("/api/extract-official")
+def extract_official(req: ExtractOfficialRequest):
+    try:
+        user_content: list[dict[str, Any]] = [
+            {"type": "input_text", "text": EXTRACT_OFFICIAL_PROMPT},
+        ]
+        for img in req.images:
+            user_content.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{img.mime_type};base64,{img.image_base64}",
+                    "detail": "high",
+                }
+            )
+
+        response = client.responses.create(
+            model="gpt-4.1",
+            input=[
+                {
+                    "role": "user",
+                    "content": user_content,
+                }
+            ],
+        )
+
+        text = response.output_text
+        data = json.loads(text)
+        out = data.get("text", "")
+        if not isinstance(out, str):
+            raise ValueError("モデル出力の text が文字列ではありません。")
+        return {"text": out}
+
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="取り込み結果がJSONではありませんでした。")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/check")
 def check(req: CheckRequest):
+    if not (req.official_text.strip() or req.official_images):
+        raise HTTPException(
+            status_code=400,
+            detail="正式情報は、テキスト貼り付けとスクショのどちらか一方以上を指定してください。",
+        )
+
     try:
+        has_text = bool(req.official_text.strip())
+        has_shots = bool(req.official_images)
+
+        if has_text and has_shots:
+            priority_rule = """
+【正式情報の扱い】
+・テキスト貼り付けとスクショの両方がある場合: テキストを正（優先）とし、スクショは補助情報とする。
+・照合・判定の基準はテキストに従う。スクショは、判読補助・表の構造確認・抜け漏れの再確認に使う。
+・テキストとスクショの内容が食い違う場合は、原則としてテキスト側を正式情報として採用し、
+  食い違い自体を「要確認」または警告として明示する（どちらが誤りか断定できない場合は要確認）。
+"""
+        elif has_text:
+            priority_rule = """
+【正式情報の扱い】
+・正式情報はテキスト貼り付けのみ。これを正としてチェック対象画像と照合する。
+"""
+        else:
+            priority_rule = """
+【正式情報の扱い】
+・正式情報はスクリーンショットのみ。続く「正式情報」画像を読み取り、それを正としてチェック対象画像と照合する。
+"""
+
         user_text = f"""
-正式情報:
-{req.official_text}
+{priority_rule}
+正式情報（テキスト貼り付け）:
+{req.official_text if has_text else "（未入力。正式情報はスクショ画像のみ。）"}
 
 参照URL:
 {req.reference_url or "なし"}
 
-添付画像は複数ある場合、すべてを読み取り、ページ間の整合性も含めて照合してください。
+チェック対象の画像は、このメッセージの後半に続く「チェック対象」として付けた画像です。
+複数ある場合はすべて読み取り、ページ間の整合性も含めて照合してください。
 
 出力形式:
 {json.dumps(RESPONSE_SCHEMA_EXAMPLE, ensure_ascii=False)}
@@ -153,6 +240,29 @@ def check(req: CheckRequest):
         user_content: list[dict[str, Any]] = [
             {"type": "input_text", "text": user_text},
         ]
+        if req.official_images:
+            shot_heading = (
+                "=== 正式情報（スクリーンショット・補助。テキスト貼り付けを優先して照合） ==="
+                if has_text
+                else "=== 正式情報（スクリーンショット） ==="
+            )
+            user_content.append(
+                {
+                    "type": "input_text",
+                    "text": shot_heading,
+                }
+            )
+            for img in req.official_images:
+                user_content.append(
+                    {
+                        "type": "input_image",
+                        "image_url": f"data:{img.mime_type};base64,{img.image_base64}",
+                        "detail": "high",
+                    }
+                )
+        user_content.append(
+            {"type": "input_text", "text": "=== チェック対象の画像 ==="}
+        )
         for img in req.images:
             user_content.append(
                 {
