@@ -1,5 +1,6 @@
 import os
 import json
+import time
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict
 from pathlib import Path
@@ -178,8 +179,6 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=creds)
 
 
-import time
-
 def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> None:
     service = get_sheets_service()
     sheet_id = os.environ["GOOGLE_SHEET_ID"]
@@ -225,6 +224,7 @@ def healthcheck():
 
 @app.post("/api/extract-official")
 def extract_official(req: ExtractOfficialRequest):
+    response = None
     try:
         user_content: list[dict[str, Any]] = [
             {"type": "input_text", "text": EXTRACT_OFFICIAL_PROMPT},
@@ -248,7 +248,7 @@ def extract_official(req: ExtractOfficialRequest):
             ],
         )
 
-        text = response.output_text
+        text = response.output_text or ""
         data = parse_model_json_object(text)
         out = data.get("text", "")
         if not isinstance(out, str):
@@ -256,7 +256,7 @@ def extract_official(req: ExtractOfficialRequest):
         return {"text": out}
 
     except json.JSONDecodeError:
-        raw_out = getattr(response, "output_text", None) or ""
+        raw_out = (getattr(response, "output_text", None) or "") if response is not None else ""
         snippet = (raw_out[:200] + "…") if len(raw_out) > 200 else raw_out
         raise HTTPException(
             status_code=500,
@@ -274,6 +274,7 @@ def check(req: CheckRequest):
             detail="正式情報は、テキスト貼り付けとスクショのどちらか一方以上を指定してください。",
         )
 
+    response = None
     try:
         has_text = bool(req.official_text.strip())
         has_shots = bool(req.official_images)
@@ -363,24 +364,25 @@ def check(req: CheckRequest):
             ]
         )
 
-        text = response.output_text
-        result = json.loads(text)
+        text = response.output_text or ""
+        result = parse_model_json_object(text)
 
-sheet_error = None
+        sheet_error: str | None = None
+        try:
+            append_result_to_sheet(req.model_dump(), result)
+        except Exception as e:
+            sheet_error = str(e)
+        if sheet_error:
+            result["sheet_log_error"] = sheet_error
 
-try:
-    append_result_to_sheet(req.model_dump(), result)
-except Exception as e:
-    sheet_error = str(e)
-
-if sheet_error:
-    result["sheet_log_error"] = sheet_error
-
-return result
+        return result
 
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="モデル出力がJSONではありませんでした。")
+        raw_out = (getattr(response, "output_text", None) or "") if response is not None else ""
+        snippet = (raw_out[:200] + "…") if len(raw_out) > 200 else raw_out
+        raise HTTPException(
+            status_code=500,
+            detail=f"モデル出力をJSONとして解釈できませんでした。先頭: {snippet!r}",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    
-   # redeploy_env_fix_0319
