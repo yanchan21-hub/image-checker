@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -78,9 +78,13 @@ RESPONSE_SCHEMA_EXAMPLE = {
 }
 
 
-class CheckRequest(BaseModel):
+class ImagePart(BaseModel):
     image_base64: str
     mime_type: str
+
+
+class CheckRequest(BaseModel):
+    images: list[ImagePart] = Field(..., min_length=1)
     official_text: str
     reference_url: str | None = ""
 
@@ -102,6 +106,7 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
     row = [[
         datetime.now(JST).isoformat(),
         payload.get("reference_url", ""),
+        len(payload.get("images", [])),
         result.get("conclusion", ""),
         result.get("yakki_risk", {}).get("status", ""),
         json.dumps(result.get("rule_violations", []), ensure_ascii=False),
@@ -110,7 +115,7 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
 
     service.spreadsheets().values().append(
         spreadsheetId=sheet_id,
-        range="Logs!A:F",
+        range="'Logs'!A:G",
         valueInputOption="RAW",
         insertDataOption="INSERT_ROWS",
         body={"values": row},
@@ -139,9 +144,23 @@ def check(req: CheckRequest):
 参照URL:
 {req.reference_url or "なし"}
 
+添付画像は複数ある場合、すべてを読み取り、ページ間の整合性も含めて照合してください。
+
 出力形式:
 {json.dumps(RESPONSE_SCHEMA_EXAMPLE, ensure_ascii=False)}
 """
+
+        user_content: list[dict[str, Any]] = [
+            {"type": "input_text", "text": user_text},
+        ]
+        for img in req.images:
+            user_content.append(
+                {
+                    "type": "input_image",
+                    "image_url": f"data:{img.mime_type};base64,{img.image_base64}",
+                    "detail": "high",
+                }
+            )
 
         response = client.responses.create(
             model="gpt-4.1",
@@ -154,14 +173,7 @@ def check(req: CheckRequest):
                 },
                 {
                     "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": user_text},
-                        {
-                            "type": "input_image",
-                            "image_url": f"data:{req.mime_type};base64,{req.image_base64}",
-                            "detail": "high"
-                        }
-                    ]
+                    "content": user_content,
                 }
             ]
         )

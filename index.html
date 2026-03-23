@@ -12,6 +12,16 @@
       padding: 0 16px;
       line-height: 1.6;
     }
+
+     /* ←ここに追加 */
+  #dropZone {
+    ...
+  }
+
+  #dropZone.dragover {
+    ...
+  }
+  
     h1 {
       margin-bottom: 24px;
     }
@@ -50,12 +60,20 @@
       font-size: 13px;
       margin-top: 6px;
     }
-    img {
-      max-width: 100%;
-      height: auto;
+    #previewContainer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
       margin-top: 12px;
+    }
+    #previewContainer img {
+      max-width: 100%;
+      max-height: 280px;
+      width: auto;
+      height: auto;
       border: 1px solid #ddd;
       border-radius: 8px;
+      object-fit: contain;
     }
   </style>
 </head>
@@ -63,10 +81,14 @@
   <h1>画像校正・商品情報照合</h1>
 
   <div class="row">
-    <label for="imageFile">画像</label>
-    <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" />
-    <div class="hint">PNG / JPG / GIF / WEBP を選択</div>
-    <img id="preview" style="display:none;" alt="プレビュー" />
+    <label for="imageFile">画像（複数可）</label>
+    <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+    <div id="dropZone">
+      ここに画像をドラッグ＆ドロップ
+      <div class="hint">または上のボタンから選択</div>
+    </div>
+    <div class="hint">PNG / JPG / GIF / WEBP を1枚以上選択（Ctrl / Shift で複数選択可）</div>
+    <div id="previewContainer"></div>
   </div>
 
   <div class="row">
@@ -101,39 +123,49 @@
     }
 
     const imageInput = document.getElementById("imageFile");
-    const preview = document.getElementById("preview");
+    const previewContainer = document.getElementById("previewContainer");
     const resultEl = document.getElementById("result");
+    let previewUrls = [];
 
     imageInput.addEventListener("change", () => {
-      const file = imageInput.files[0];
-      if (!file) {
-        preview.style.display = "none";
-        preview.src = "";
-        return;
-      }
-      const objectUrl = URL.createObjectURL(file);
-      preview.src = objectUrl;
-      preview.style.display = "block";
+      previewUrls.forEach((u) => URL.revokeObjectURL(u));
+      previewUrls = [];
+      previewContainer.innerHTML = "";
+      const files = Array.from(imageInput.files || []);
+      files.forEach((file) => {
+        const url = URL.createObjectURL(file);
+        previewUrls.push(url);
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = "プレビュー";
+        previewContainer.appendChild(img);
+      });
     });
 
     document.getElementById("runBtn").addEventListener("click", async () => {
-      const file = imageInput.files[0];
+      const files = Array.from(imageInput.files || []);
       const officialText = document.getElementById("officialText").value;
       const referenceUrl = document.getElementById("referenceUrl").value;
 
-      if (!file) {
-        resultEl.textContent = "画像を選択してください。";
+      if (files.length === 0) {
+        resultEl.textContent = "画像を1枚以上選択してください。";
         return;
       }
 
       resultEl.textContent = "チェック中...";
 
       try {
-        const imageBase64 = await fileToBase64(file);
+        const images = [];
+        for (const file of files) {
+          const imageBase64 = await fileToBase64(file);
+          images.push({
+            image_base64: imageBase64,
+            mime_type: file.type || "image/png"
+          });
+        }
 
         const payload = {
-          image_base64: imageBase64,
-          mime_type: file.type,
+          images,
           official_text: officialText,
           reference_url: referenceUrl
         };
