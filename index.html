@@ -82,6 +82,72 @@
       border-radius: 8px;
       object-fit: contain;
     }
+    .result-card {
+  background: #f8f8f8;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  padding: 16px;
+  margin-top: 16px;
+}
+
+.result-header {
+  padding: 16px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 20px;
+}
+
+.result-ok {
+  background: #e8f7e8;
+  border: 1px solid #7cc67c;
+}
+
+.result-fix {
+  background: #fdeaea;
+  border: 1px solid #e38b8b;
+}
+
+.result-check {
+  background: #fff7e6;
+  border: 1px solid #e7c46a;
+}
+
+.result-card h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.result-card ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+
+.result-card li {
+  margin-bottom: 6px;
+}
+
+.result-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.result-row {
+  margin-bottom: 8px;
+}
+
+.result-label {
+  font-weight: bold;
+}
+
+.result-muted {
+  color: #666;
+}
+
+.result-empty {
+  color: #888;
+  font-style: italic;
+}
   </style>
 </head>
 <body>
@@ -129,6 +195,83 @@
       });
     }
   
+    function escapeHtml(str) {
+  return String(str ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function renderList(items) {
+  if (!items || items.length === 0) {
+    return `<div class="result-empty">なし</div>`;
+  }
+  return `<ul>${items.map(item => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderResult(data) {
+  const conclusion = data.conclusion || "要確認";
+
+  let headerClass = "result-check";
+  if (conclusion === "OK") headerClass = "result-ok";
+  if (conclusion === "修正必要") headerClass = "result-fix";
+
+  return `
+    <div class="result-grid">
+      <div class="result-header ${headerClass}">
+        判定結果：${escapeHtml(conclusion)}
+      </div>
+
+      <div class="result-card">
+        <h3>比較結果</h3>
+        <div class="result-row"><span class="result-label">商品名：</span>${escapeHtml(data.comparison?.product_name || "")}</div>
+        <div class="result-row"><span class="result-label">価格：</span>${escapeHtml(data.comparison?.price || "")}</div>
+        <div class="result-row"><span class="result-label">容量：</span>${escapeHtml(data.comparison?.volume || "")}</div>
+        <div class="result-row"><span class="result-label">発売日：</span>${escapeHtml(data.comparison?.release_date || "")}</div>
+        <div class="result-row"><span class="result-label">説明文：</span>${escapeHtml(data.comparison?.description || "")}</div>
+      </div>
+
+      <div class="result-card">
+        <h3>ルール違反</h3>
+        ${renderList(data.rule_violations)}
+      </div>
+
+      <div class="result-card">
+        <h3>一致項目</h3>
+        ${renderList(data.accuracy?.matches)}
+      </div>
+
+      <div class="result-card">
+        <h3>注意</h3>
+        ${renderList(data.accuracy?.warnings)}
+      </div>
+
+      <div class="result-card">
+        <h3>薬機リスク</h3>
+        <div class="result-row"><span class="result-label">ステータス：</span>${escapeHtml(data.yakki_risk?.status || "")}</div>
+        <div class="result-row"><span class="result-label">注意語：</span></div>
+        ${renderList(data.yakki_risk?.terms)}
+        <div class="result-row" style="margin-top:12px;"><span class="result-label">メモ：</span></div>
+        ${renderList(data.yakki_risk?.notes)}
+      </div>
+
+      <div class="result-card">
+        <h3>修正ポイント</h3>
+        ${renderList(data.fix_points)}
+      </div>
+
+      <div class="result-card">
+        <h3>スペース監査</h3>
+        <div class="result-row"><span class="result-label">正式情報：</span>${escapeHtml(data.space_audit?.official_visible || "")}</div>
+        <div class="result-row"><span class="result-label">画像内：</span>${escapeHtml(data.space_audit?.image_visible || "")}</div>
+        <div class="result-row"><span class="result-label">結果：</span>${escapeHtml(data.space_audit?.result || "")}</div>
+      </div>
+    </div>
+  `;
+}
+
     const imageInput = document.getElementById("imageFile");
     const dropZone = document.getElementById("dropZone");
     const previewContainer = document.getElementById("previewContainer");
@@ -228,18 +371,22 @@
         const data = await res.json();
   
         if (!res.ok) {
-          resultEl.textContent = JSON.stringify({
-            status: res.status,
-            error: data
-          }, null, 2);
+          resultEl.innerHTML = `
+  <div class="result-header result-fix">エラーが発生しました</div>
+  <div class="result-card">
+    <div><span class="result-label">status:</span> ${res.status}</div>
+    <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
+  </div>
+`;
           return;
         }
   
-        resultEl.textContent = JSON.stringify(data, null, 2);
+        resultEl.innerHTML = renderResult(data);
       } catch (error) {
-        resultEl.textContent = JSON.stringify({
-          error: String(error)
-        }, null, 2);
+        resultEl.innerHTML = `
+  <div class="result-header result-fix">通信エラー</div>
+  <div class="result-card">${escapeHtml(String(error))}</div>
+`;
       }
     });
   </script>
