@@ -13,8 +13,7 @@
       line-height: 1.6;
     }
 
-     /* ←ここに追加 */
-     #dropZone {
+    .drop-zone {
       margin-top: 12px;
       padding: 28px 16px;
       border: 2px dashed #bbb;
@@ -24,10 +23,10 @@
       transition: 0.2s ease;
     }
 
-    #dropZone.dragover {
+    .drop-zone.dragover {
       border-color: #4f46e5;
       background: #eef2ff;
-    } 
+    }
 
     h1 {
       margin-bottom: 24px;
@@ -53,6 +52,19 @@
     button {
       cursor: pointer;
       margin-top: 8px;
+    }
+    #runBtn {
+      background: #ea580c;
+      color: #fff;
+      border: 1px solid #c2410c;
+      font-weight: bold;
+    }
+    #runBtn:hover {
+      background: #f97316;
+      border-color: #ea580c;
+    }
+    #runBtn:active {
+      background: #c2410c;
     }
     pre {
       background: #f6f6f6;
@@ -174,8 +186,8 @@
   <div class="row">
     <label for="imageFile">画像（複数可）</label>
     <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
-    <div id="dropZone">
-      ここに画像をドラッグ＆ドロップ
+    <div id="dropZone" class="drop-zone">
+      ここにチェック対象画像をドラッグ＆ドロップ
       <div class="hint">または上のボタンから選択</div>
     </div>
     <div class="hint">PNG / JPG / GIF / WEBP を1枚以上選択（Ctrl / Shift で複数選択可）</div>
@@ -192,6 +204,10 @@
     <textarea id="officialText" placeholder="任意。貼り付けない場合は下のスクショのみでも可"></textarea>
     <label for="officialImageFile" style="margin-top:12px;">② スプシ・公式情報のスクショ（任意・複数可）</label>
     <input type="file" id="officialImageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+    <div id="officialDropZone" class="drop-zone">
+      ここに正式情報スクショをドラッグ＆ドロップ
+      <div class="hint">または上のボタンから選択</div>
+    </div>
     <div class="hint">「取り込み」で①にテキスト反映可能。取り込まず②だけでも照合できます。①と②があるときは①が正、②は補助です。</div>
     <div id="officialPreviewContainer"></div>
     <button type="button" id="importOfficialBtn" class="btn-secondary">スクショから正式情報を取り込む（テキスト欄に反映）</button>
@@ -301,10 +317,19 @@ function renderResult(data) {
   `;
 }
 
+    const ALLOWED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+    function filterImageFiles(fileList) {
+      return Array.from(fileList || []).filter((file) =>
+        ALLOWED_IMAGE_TYPES.includes(file.type)
+      );
+    }
+
     const imageInput = document.getElementById("imageFile");
     const dropZone = document.getElementById("dropZone");
     const previewContainer = document.getElementById("previewContainer");
     const officialImageInput = document.getElementById("officialImageFile");
+    const officialDropZone = document.getElementById("officialDropZone");
     const officialPreviewContainer = document.getElementById("officialPreviewContainer");
     const officialImportStatus = document.getElementById("officialImportStatus");
     const resultEl = document.getElementById("result");
@@ -349,10 +374,17 @@ function renderResult(data) {
       });
     }
 
-    officialImageInput.addEventListener("change", () => {
-      selectedOfficialFiles = Array.from(officialImageInput.files || []);
+    function setOfficialFiles(files) {
+      selectedOfficialFiles = files;
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      officialImageInput.files = dt.files;
       renderOfficialPreviews(selectedOfficialFiles);
       officialImportStatus.textContent = "";
+    }
+
+    officialImageInput.addEventListener("change", () => {
+      setOfficialFiles(Array.from(officialImageInput.files || []));
     });
 
     document.getElementById("importOfficialBtn").addEventListener("click", async () => {
@@ -405,18 +437,45 @@ function renderResult(data) {
     });
   
     dropZone.addEventListener("drop", (e) => {
-      const files = Array.from(e.dataTransfer.files || []).filter((file) =>
-        ["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)
-      );
-  
+      const files = filterImageFiles(e.dataTransfer.files);
+
       if (files.length === 0) {
-        resultEl.textContent = "画像ファイルのみドロップできます。";
+        resultEl.textContent = "チェック対象は画像ファイル（PNG / JPG / GIF / WEBP）のみドロップできます。";
         return;
       }
-  
+
       selectedFiles = files;
       renderPreviews(selectedFiles);
       resultEl.textContent = `${selectedFiles.length}枚の画像を読み込みました。`;
+    });
+
+    ["dragenter", "dragover"].forEach((eventName) => {
+      officialDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        officialDropZone.classList.add("dragover");
+      });
+    });
+
+    ["dragleave", "dragend", "drop"].forEach((eventName) => {
+      officialDropZone.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        officialDropZone.classList.remove("dragover");
+      });
+    });
+
+    officialDropZone.addEventListener("drop", (e) => {
+      const files = filterImageFiles(e.dataTransfer.files);
+
+      if (files.length === 0) {
+        officialImportStatus.textContent =
+          "正式情報用は画像ファイル（PNG / JPG / GIF / WEBP）のみドロップできます。";
+        return;
+      }
+
+      setOfficialFiles(files);
+      officialImportStatus.textContent = `${files.length}枚の正式情報スクショを読み込みました。`;
     });
   
     document.getElementById("runBtn").addEventListener("click", async () => {
