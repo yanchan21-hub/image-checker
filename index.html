@@ -5,12 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>画像校正チェック</title>
   <style>
+    html {
+      background: #f0f2f5;
+      min-height: 100%;
+    }
     body {
       font-family: sans-serif;
       max-width: 900px;
-      margin: 40px auto;
-      padding: 0 16px;
+      margin: 0 auto;
+      padding: 40px 16px 48px;
       line-height: 1.6;
+      min-height: 100vh;
+      box-sizing: border-box;
     }
 
     .drop-zone {
@@ -29,10 +35,23 @@
     }
 
     h1 {
-      margin-bottom: 24px;
+      text-align: center;
+      margin: 0 0 28px;
+      font-size: 1.5rem;
     }
     .row {
       margin-bottom: 20px;
+    }
+    .form-panel {
+      background: #fff;
+      border-radius: 14px;
+      padding: 22px 24px 24px;
+      border: 1px solid #e2e5eb;
+      box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+    }
+    .form-panel > label:first-child,
+    .form-panel > .panel-title {
+      margin-top: 0;
     }
     label {
       display: block;
@@ -112,6 +131,18 @@
       background: #f0f0f0;
       border: 1px solid #ccc;
     }
+    #importOfficialBtn {
+      background: #1e3a5f;
+      color: #fff;
+      border: 1px solid #152a45;
+    }
+    #importOfficialBtn:hover {
+      background: #2a4d7a;
+      border-color: #1e3a5f;
+    }
+    #importOfficialBtn:active {
+      background: #152a45;
+    }
     .result-card {
   background: #f8f8f8;
   border: 1px solid #ddd;
@@ -184,39 +215,45 @@
   <h1>画像校正・商品情報照合</h1>
 
   <div class="row">
-    <label for="imageFile">画像（複数可）</label>
-    <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
-    <div id="dropZone" class="drop-zone">
-      ここにチェック対象画像をドラッグ＆ドロップ
-      <div class="hint">または上のボタンから選択</div>
+    <div class="form-panel">
+      <label for="imageFile">画像（複数可）</label>
+      <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+      <div id="dropZone" class="drop-zone">
+        ここにチェック対象画像をドラッグ＆ドロップ
+        <div class="hint">または上のボタンから選択</div>
+      </div>
+      <div class="hint">PNG / JPG / GIF / WEBP を1枚以上選択（Ctrl / Shift で複数選択可）</div>
+      <div id="previewContainer"></div>
     </div>
-    <div class="hint">PNG / JPG / GIF / WEBP を1枚以上選択（Ctrl / Shift で複数選択可）</div>
-    <div id="previewContainer"></div>
   </div>
 
   <div class="row">
-    <div style="font-weight:bold;margin-bottom:8px;">正式情報</div>
-    <div class="hint" style="margin-bottom:8px;">
-      次のいずれか（または両方）: <strong>テキスト貼り付け</strong>／<strong>スプシや公式情報のスクショ</strong>。
-      どちらか片方だけでも利用可。両方ある場合は<strong>テキストを優先</strong>し、スクショは<strong>補助</strong>として判定に使います。
+    <div class="form-panel">
+      <div class="panel-title" style="font-weight:bold;margin-bottom:8px;">正式情報</div>
+      <div class="hint" style="margin-bottom:8px;">
+        次のいずれか（または両方）: <strong>テキスト貼り付け</strong>／<strong>スプシや公式情報のスクショ</strong>。
+        どちらか片方だけでも利用可。両方ある場合は<strong>テキストを優先</strong>し、スクショは<strong>補助</strong>として判定に使います。
+      </div>
+      <label for="officialText" style="font-weight:bold;">① テキスト貼り付け（スプシコピーなど）</label>
+      <textarea id="officialText" placeholder="任意。貼り付けない場合は下のスクショのみでも可"></textarea>
+      <label for="officialImageFile" style="margin-top:12px;">② スプシ・公式情報のスクショ（任意・複数可）</label>
+      <input type="file" id="officialImageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
+      <div id="officialDropZone" class="drop-zone">
+        ここに正式情報スクショをドラッグ＆ドロップ
+        <div class="hint">または上のボタンから選択</div>
+      </div>
+      <div class="hint">「取り込み」で①にテキスト反映可能。取り込まず②だけでも照合できます。①と②があるときは①が正、②は補助です。</div>
+      <div id="officialPreviewContainer"></div>
+      <button type="button" id="importOfficialBtn" class="btn-secondary">スクショから正式情報を取り込む（テキスト欄に反映）</button>
+      <p id="officialImportStatus" class="hint" style="margin-top:8px;"></p>
     </div>
-    <label for="officialText" style="font-weight:bold;">① テキスト貼り付け（スプシコピーなど）</label>
-    <textarea id="officialText" placeholder="任意。貼り付けない場合は下のスクショのみでも可"></textarea>
-    <label for="officialImageFile" style="margin-top:12px;">② スプシ・公式情報のスクショ（任意・複数可）</label>
-    <input type="file" id="officialImageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
-    <div id="officialDropZone" class="drop-zone">
-      ここに正式情報スクショをドラッグ＆ドロップ
-      <div class="hint">または上のボタンから選択</div>
-    </div>
-    <div class="hint">「取り込み」で①にテキスト反映可能。取り込まず②だけでも照合できます。①と②があるときは①が正、②は補助です。</div>
-    <div id="officialPreviewContainer"></div>
-    <button type="button" id="importOfficialBtn" class="btn-secondary">スクショから正式情報を取り込む（テキスト欄に反映）</button>
-    <p id="officialImportStatus" class="hint" style="margin-top:8px;"></p>
   </div>
 
   <div class="row">
-    <label for="referenceUrl">参照URL（任意）</label>
-    <input type="text" id="referenceUrl" placeholder="https://example.com" />
+    <div class="form-panel">
+      <label for="referenceUrl">参照URL（任意）</label>
+      <input type="text" id="referenceUrl" placeholder="https://example.com" />
+    </div>
   </div>
 
   <div class="row">
