@@ -178,6 +178,8 @@ def get_sheets_service():
     return build("sheets", "v4", credentials=creds)
 
 
+import time
+
 def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> None:
     service = get_sheets_service()
     sheet_id = os.environ["GOOGLE_SHEET_ID"]
@@ -192,15 +194,23 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
         json.dumps(result.get("fix_points", []), ensure_ascii=False)
     ]]
 
-    service.spreadsheets().values().append(
-        spreadsheetId=sheet_id,
-        range="'Logs'!A:G",
-        valueInputOption="RAW",
-        insertDataOption="INSERT_ROWS",
-        body={"values": row},
-    ).execute()
+    last_error = None
 
+    for wait in [1, 2, 4]:
+        try:
+            service.spreadsheets().values().append(
+                spreadsheetId=sheet_id,
+                range="'Logs'!A:G",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": row},
+            ).execute()
+            return
+        except Exception as e:
+            last_error = e
+            time.sleep(wait)
 
+    raise last_error
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 @app.get("/")
@@ -356,8 +366,17 @@ def check(req: CheckRequest):
         text = response.output_text
         result = json.loads(text)
 
-        append_result_to_sheet(req.model_dump(), result)
-        return result
+sheet_error = None
+
+try:
+    append_result_to_sheet(req.model_dump(), result)
+except Exception as e:
+    sheet_error = str(e)
+
+if sheet_error:
+    result["sheet_log_error"] = sheet_error
+
+return result
 
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="モデル出力がJSONではありませんでした。")
