@@ -103,9 +103,69 @@ EXTRACT_OFFICIAL_PROMPT = """
 ・表は行ごとに改行し、列はタブ（\\t）で区切る
 ・説明文や前置きは書かない
 
-出力は JSON のみ。形式は次の1オブジェクト:
+出力は JSON のみ（マークダウンのコードブロックや説明文は禁止）。
+形式は次の1オブジェクトだけ:
 {"text": "転記した全文（改行は \\n）"}
 """
+
+
+def _strip_json_code_fence(raw: str) -> str:
+    s = raw.strip()
+    if not s.startswith("```"):
+        return s
+    lines = s.splitlines()
+    if not lines:
+        return s
+    lines = lines[1:]
+    while lines and lines[-1].strip() == "":
+        lines.pop()
+    if lines and lines[-1].strip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _extract_outer_json_object(raw: str) -> str | None:
+    s = raw.strip()
+    i = s.find("{")
+    if i < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for j in range(i, len(s)):
+        c = s[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+        else:
+            if c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[i : j + 1]
+    return None
+
+
+def parse_model_json_object(raw: str) -> dict[str, Any]:
+    """モデルが ```json ... ``` や前置き付きで返しても dict に落とす。"""
+    s = _strip_json_code_fence(raw.strip())
+    try:
+        out = json.loads(s)
+    except json.JSONDecodeError:
+        frag = _extract_outer_json_object(s)
+        if frag is None:
+            raise
+        out = json.loads(frag)
+    if not isinstance(out, dict):
+        raise ValueError("モデル出力のトップレベルがJSONオブジェクトではありません。")
+    return out
 
 
 def get_sheets_service():
@@ -179,14 +239,19 @@ def extract_official(req: ExtractOfficialRequest):
         )
 
         text = response.output_text
-        data = json.loads(text)
+        data = parse_model_json_object(text)
         out = data.get("text", "")
         if not isinstance(out, str):
             raise ValueError("モデル出力の text が文字列ではありません。")
         return {"text": out}
 
     except json.JSONDecodeError:
-        raise HTTPException(status_code=500, detail="取り込み結果がJSONではありませんでした。")
+        raw_out = getattr(response, "output_text", None) or ""
+        snippet = (raw_out[:200] + "…") if len(raw_out) > 200 else raw_out
+        raise HTTPException(
+            status_code=500,
+            detail=f"取り込み結果をJSONとして解釈できませんでした。先頭: {snippet!r}",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
