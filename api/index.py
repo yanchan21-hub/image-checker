@@ -2,7 +2,7 @@ import os
 import json
 import time
 from datetime import datetime, timezone, timedelta
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -84,7 +84,11 @@ class ImagePart(BaseModel):
     mime_type: str
 
 
+CheckerName = Literal["山田", "栫", "八尋", "川西", "園田"]
+
+
 class CheckRequest(BaseModel):
+    checker_name: CheckerName
     images: list[ImagePart] = Field(..., min_length=1)
     official_text: str = ""
     official_images: list[ImagePart] = Field(default_factory=list)
@@ -185,6 +189,7 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
 
     row = [[
         datetime.now(JST).isoformat(),
+        payload.get("checker_name", ""),
         payload.get("reference_url", ""),
         len(payload.get("images", [])),
         result.get("conclusion", ""),
@@ -199,7 +204,7 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
         try:
             service.spreadsheets().values().append(
                 spreadsheetId=sheet_id,
-                range="'Logs'!A:G",
+                range="'Logs'!A:H",
                 valueInputOption="RAW",
                 insertDataOption="INSERT_ROWS",
                 body={"values": row},
