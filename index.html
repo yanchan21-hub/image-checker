@@ -216,6 +216,20 @@
 
   <div class="row">
     <div class="form-panel">
+      <label for="checkerName">チェック者名（必須）</label>
+      <select id="checkerName" required>
+        <option value="" disabled selected>選択してください</option>
+        <option value="山田">山田</option>
+        <option value="栫">栫</option>
+        <option value="八尋">八尋</option>
+        <option value="川西">川西</option>
+        <option value="園田">園田</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="form-panel">
       <label for="imageFile">画像（複数可）</label>
       <input type="file" id="imageFile" accept="image/png,image/jpeg,image/webp,image/gif" multiple />
       <div id="dropZone" class="drop-zone">
@@ -246,20 +260,6 @@
       <div id="officialPreviewContainer"></div>
       <button type="button" id="importOfficialBtn" class="btn-secondary">スクショから正式情報を取り込む（テキスト欄に反映）</button>
       <p id="officialImportStatus" class="hint" style="margin-top:8px;"></p>
-    </div>
-  </div>
-
-  <div class="row">
-    <div class="form-panel">
-      <label for="checkerName">チェック者名（必須）</label>
-      <select id="checkerName" required>
-        <option value="" disabled selected>選択してください</option>
-        <option value="山田">山田</option>
-        <option value="栫">栫</option>
-        <option value="八尋">八尋</option>
-        <option value="川西">川西</option>
-        <option value="園田">園田</option>
-      </select>
     </div>
   </div>
 
