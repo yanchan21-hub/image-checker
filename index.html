@@ -58,7 +58,7 @@
       font-weight: bold;
       margin-bottom: 8px;
     }
-    textarea, input, button {
+    textarea, input, button, select {
       width: 100%;
       box-sizing: border-box;
       padding: 10px;
@@ -251,6 +251,20 @@
 
   <div class="row">
     <div class="form-panel">
+      <label for="checkerName">チェック者名（必須）</label>
+      <select id="checkerName" required>
+        <option value="" disabled selected>選択してください</option>
+        <option value="山田">山田</option>
+        <option value="栫">栫</option>
+        <option value="八尋">八尋</option>
+        <option value="川西">川西</option>
+        <option value="園田">園田</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="form-panel">
       <label for="referenceUrl">参照URL（任意）</label>
       <input type="text" id="referenceUrl" placeholder="https://example.com" />
     </div>
@@ -286,6 +300,150 @@
     .replaceAll("'", "&#039;");
 }
 
+    /** チェック対象画像をこの枚数ずつ API に送る（ペイロード過大による通信エラー対策） */
+    const CHECK_IMAGE_BATCH_SIZE = 3;
+
+    function chunkArray(items, size) {
+      const out = [];
+      for (let i = 0; i < items.length; i += size) {
+        out.push(items.slice(i, i + size));
+      }
+      return out;
+    }
+
+    function uniqueStringList(arr) {
+      const seen = new Set();
+      const out = [];
+      for (const x of arr || []) {
+        const s = String(x);
+        if (!seen.has(s)) {
+          seen.add(s);
+          out.push(s);
+        }
+      }
+      return out;
+    }
+
+    function mergeConclusions(list) {
+      const xs = list.filter(Boolean);
+      if (xs.includes("修正必要")) return "修正必要";
+      if (xs.includes("要確認")) return "要確認";
+      if (xs.length === 0) return "要確認";
+      return "OK";
+    }
+
+    function mergeYakkiStatus(statuses) {
+      const rank = { NG: 3, グレー: 2, 問題なし: 1 };
+      let best = 0;
+      let label = "問題なし";
+      for (const s of statuses || []) {
+        const r = rank[s] || 0;
+        if (r > best) {
+          best = r;
+          label = s;
+        }
+      }
+      return label;
+    }
+
+    function mergeComparisonFields(batchResults, key) {
+      return batchResults
+        .map((r, i) => {
+          const v = r.comparison?.[key];
+          const t = v != null ? String(v).trim() : "";
+          return t ? `[グループ${i + 1}] ${t}` : "";
+        })
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    function mergeSpaceAudit(batchResults) {
+      let firstOfficial = "";
+      for (const r of batchResults) {
+        const v = String(r.space_audit?.official_visible || "").trim();
+        if (v) {
+          firstOfficial = v;
+          break;
+        }
+      }
+      const lines = batchResults
+        .map((r, i) => {
+          const a = r.space_audit || {};
+          const im = String(a.image_visible || "").trim();
+          const res = String(a.result || "").trim();
+          if (!im && !res) return "";
+          return `[グループ${i + 1}] 画像側:「${im}」→ ${res || "-"}`;
+        })
+        .filter(Boolean);
+      const anyNo = batchResults.some((r) => r.space_audit?.result === "不一致");
+      const anyQ = batchResults.some((r) => r.space_audit?.result === "要確認");
+      let result = "一致";
+      if (anyNo) result = "不一致";
+      else if (anyQ) result = "要確認";
+      return {
+        official_visible: firstOfficial,
+        image_visible: lines.join("\n"),
+        result,
+      };
+    }
+
+    function mergeCheckResults(batchResults) {
+      if (!batchResults.length) {
+        return { conclusion: "要確認", comparison: {}, rule_violations: [], accuracy: { matches: [], warnings: [] }, yakki_risk: { status: "", terms: [], notes: [] }, fix_points: [], space_audit: {} };
+      }
+      if (batchResults.length === 1) return { ...batchResults[0] };
+
+      const conclusions = batchResults.map((r) => r.conclusion);
+      const yakStatuses = batchResults.map((r) => r.yakki_risk?.status).filter(Boolean);
+
+      let rule_violations = [];
+      let matches = [];
+      let warnings = [];
+      let fix_points = [];
+      let terms = [];
+      let notes = [];
+      for (const r of batchResults) {
+        rule_violations = rule_violations.concat(r.rule_violations || []);
+        matches = matches.concat(r.accuracy?.matches || []);
+        warnings = warnings.concat(r.accuracy?.warnings || []);
+        fix_points = fix_points.concat(r.fix_points || []);
+        terms = terms.concat(r.yakki_risk?.terms || []);
+        notes = notes.concat(r.yakki_risk?.notes || []);
+      }
+
+      const sheetErrors = batchResults
+        .map((r, i) =>
+          r.sheet_log_error ? `グループ${i + 1}: ${r.sheet_log_error}` : ""
+        )
+        .filter(Boolean)
+        .join("\n");
+
+      const merged = {
+        conclusion: mergeConclusions(conclusions),
+        comparison: {
+          product_name: mergeComparisonFields(batchResults, "product_name"),
+          price: mergeComparisonFields(batchResults, "price"),
+          volume: mergeComparisonFields(batchResults, "volume"),
+          release_date: mergeComparisonFields(batchResults, "release_date"),
+          description: mergeComparisonFields(batchResults, "description"),
+        },
+        rule_violations: uniqueStringList(rule_violations),
+        accuracy: {
+          matches: uniqueStringList(matches),
+          warnings: uniqueStringList(warnings),
+        },
+        yakki_risk: {
+          status: mergeYakkiStatus(yakStatuses),
+          terms: uniqueStringList(terms),
+          notes: uniqueStringList(notes),
+        },
+        fix_points: uniqueStringList(fix_points),
+        space_audit: mergeSpaceAudit(batchResults),
+      };
+      if (sheetErrors) merged.sheet_log_error = sheetErrors;
+      return merged;
+    }
+
 function renderList(items) {
   if (!items || items.length === 0) {
     return `<div class="result-empty">なし</div>`;
@@ -295,6 +453,13 @@ function renderList(items) {
 
 function renderResult(data) {
   const conclusion = data.conclusion || "要確認";
+  const batchMeta = data._batchMeta;
+  const batchBanner =
+    batchMeta && batchMeta.batchCount > 1
+      ? `<div class="result-card" style="background:#f0f4ff;border-color:#c7d2fe;margin-bottom:4px;">
+        <div class="result-row">チェック対象 <strong>${escapeHtml(String(batchMeta.totalImages))}</strong> 枚を <strong>${escapeHtml(String(batchMeta.batchCount))}</strong> グループ（各最大 ${escapeHtml(String(batchMeta.batchSize))} 枚）に分けて API に送信し、結果を統合しています。</div>
+      </div>`
+      : "";
 
   let headerClass = "result-check";
   if (conclusion === "OK") headerClass = "result-ok";
@@ -302,6 +467,7 @@ function renderResult(data) {
 
   return `
     <div class="result-grid">
+      ${batchBanner}
       <div class="result-header ${headerClass}">
         判定結果：${escapeHtml(conclusion)}
       </div>
@@ -420,6 +586,14 @@ function renderResult(data) {
       officialImportStatus.textContent = "";
     }
 
+    function chunkArray(array, size) {
+      const chunks = [];
+      for (let i = 0; i < array.length; i += size) {
+      chunks.push(array.slice(i, i + size));
+      }
+     return chunks;
+    }
+
     officialImageInput.addEventListener("change", () => {
       setOfficialFiles(Array.from(officialImageInput.files || []));
     });
@@ -519,7 +693,13 @@ function renderResult(data) {
       const files = selectedFiles;
       const officialText = document.getElementById("officialText").value;
       const referenceUrl = document.getElementById("referenceUrl").value;
-  
+      const checkerName = document.getElementById("checkerName").value;
+
+      if (!checkerName) {
+        resultEl.textContent = "チェック者名を選択してください。";
+        return;
+      }
+
       if (files.length === 0) {
         resultEl.textContent = "チェック対象の画像を1枚以上選択してください。";
         return;
@@ -531,18 +711,9 @@ function renderResult(data) {
         return;
       }
   
-      resultEl.textContent = "チェック中...";
-  
-      try {
-        const images = [];
-        for (const file of files) {
-          const imageBase64 = await fileToBase64(file);
-          images.push({
-            image_base64: imageBase64,
-            mime_type: file.type || "image/png"
-          });
-        }
+      const fileChunks = chunkArray(files, CHECK_IMAGE_BATCH_SIZE);
 
+      try {
         const official_images = [];
         for (const file of selectedOfficialFiles) {
           official_images.push({
@@ -550,36 +721,57 @@ function renderResult(data) {
             mime_type: file.type || "image/png"
           });
         }
-  
-        const payload = {
-          images,
-          official_text: officialText,
-          official_images,
-          reference_url: referenceUrl
-        };
-  
-        const res = await fetch("/api/check", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify(payload)
-        });
-  
-        const data = await res.json();
-  
-        if (!res.ok) {
-          resultEl.innerHTML = `
-  <div class="result-header result-fix">エラーが発生しました</div>
+
+        const batchResults = [];
+        for (let b = 0; b < fileChunks.length; b++) {
+          resultEl.textContent = `チェック中… (${b + 1} / ${fileChunks.length} グループ)`;
+
+          const images = [];
+          for (const file of fileChunks[b]) {
+            const imageBase64 = await fileToBase64(file);
+            images.push({
+              image_base64: imageBase64,
+              mime_type: file.type || "image/png"
+            });
+          }
+
+          const payload = {
+            checker_name: checkerName,
+            images,
+            official_text: officialText,
+            official_images,
+            reference_url: referenceUrl
+          };
+
+          const res = await fetch("/api/check", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+
+          const data = await res.json();
+
+          if (!res.ok) {
+            resultEl.innerHTML = `
+  <div class="result-header result-fix">エラーが発生しました（グループ ${b + 1} / ${fileChunks.length}）</div>
   <div class="result-card">
     <div><span class="result-label">status:</span> ${res.status}</div>
     <pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>
   </div>
 `;
-          return;
+            return;
+          }
+
+          batchResults.push(data);
         }
-  
-        resultEl.innerHTML = renderResult(data);
+
+        const merged = mergeCheckResults(batchResults);
+        merged._batchMeta = {
+          totalImages: files.length,
+          batchCount: fileChunks.length,
+          batchSize: CHECK_IMAGE_BATCH_SIZE
+        };
+        resultEl.innerHTML = renderResult(merged);
       } catch (error) {
         resultEl.innerHTML = `
   <div class="result-header result-fix">通信エラー</div>
