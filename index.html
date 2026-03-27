@@ -461,6 +461,19 @@ function renderResult(data) {
       </div>`
       : "";
 
+  const showImageLegend = batchMeta && Number(batchMeta.totalImages) > 1;
+  const imageLegend = showImageLegend
+    ? `<div class="result-card" style="background:#fafafa;border-color:#e2e5eb;margin-bottom:4px;">
+        <h3 style="margin:0 0 10px;font-size:16px;">チェック画像の番号（どの商品・ページか）</h3>
+        <div class="result-row" style="margin-bottom:10px;"><strong>【全体N枚目】</strong>は、チェック対象で選んだ（またはドロップした）<strong>上からN番目</strong>の画像を指します。修正ポイント・ルール違反・注意などの先頭の番号と対応させてください。</div>
+        ${
+          batchMeta.batchCount > 1 && batchMeta.groupRangeLabels?.length
+            ? `<div class="result-label" style="margin-bottom:6px;">送信バッチと通し番号の対応</div>${renderList(batchMeta.groupRangeLabels)}`
+            : ""
+        }
+      </div>`
+    : "";
+
   let headerClass = "result-check";
   if (conclusion === "OK") headerClass = "result-ok";
   if (conclusion === "修正必要") headerClass = "result-fix";
@@ -468,6 +481,7 @@ function renderResult(data) {
   return `
     <div class="result-grid">
       ${batchBanner}
+      ${imageLegend}
       <div class="result-header ${headerClass}">
         判定結果：${escapeHtml(conclusion)}
       </div>
@@ -737,6 +751,7 @@ function renderResult(data) {
 
           const payload = {
             checker_name: checkerName,
+            first_check_image_number: b * CHECK_IMAGE_BATCH_SIZE + 1,
             images,
             official_text: officialText,
             official_images,
@@ -766,10 +781,18 @@ function renderResult(data) {
         }
 
         const merged = mergeCheckResults(batchResults);
+        const groupRangeLabels = fileChunks.map((chunk, b) => {
+          const start = b * CHECK_IMAGE_BATCH_SIZE + 1;
+          const end = start + chunk.length - 1;
+          return end > start
+            ? `グループ ${b + 1}（送信バッチ）: チェック画像 全体 ${start}〜${end}枚目`
+            : `グループ ${b + 1}: チェック画像 全体 ${start}枚目`;
+        });
         merged._batchMeta = {
           totalImages: files.length,
           batchCount: fileChunks.length,
-          batchSize: CHECK_IMAGE_BATCH_SIZE
+          batchSize: CHECK_IMAGE_BATCH_SIZE,
+          groupRangeLabels
         };
         resultEl.innerHTML = renderResult(merged);
       } catch (error) {
