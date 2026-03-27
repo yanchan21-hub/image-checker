@@ -300,8 +300,8 @@
     .replaceAll("'", "&#039;");
 }
 
-    /** チェック対象画像をこの枚数ずつ API に送る（ペイロード過大による通信エラー対策） */
-    const CHECK_IMAGE_BATCH_SIZE = 3;
+    /** チェック対象画像をこの枚数ずつ API に送る（ペイロード過大による通信エラー対策。通信エラーが出る場合は 3 などに下げる） */
+    const CHECK_IMAGE_BATCH_SIZE = 4;
 
     function chunkArray(items, size) {
       const out = [];
