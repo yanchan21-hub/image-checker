@@ -198,8 +198,9 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
     service = get_sheets_service()
     sheet_id = os.environ["GOOGLE_SHEET_ID"]
 
+    checked_at = datetime.now(JST).strftime("%Y/%m/%d %H:%M")
     row = [[
-        datetime.now(JST).isoformat(),
+        checked_at,
         payload.get("checker_name", ""),
         payload.get("reference_url", ""),
         len(payload.get("images", [])),
