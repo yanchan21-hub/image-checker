@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Literal
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -12,8 +13,38 @@ from openai import OpenAI
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+_explicit_dotenv = os.environ.get("IMAGE_CHECKER_DOTENV", "").strip()
+if _explicit_dotenv:
+    _p = Path(_explicit_dotenv)
+    _dotenv_candidates = [_p if _p.is_absolute() else (BASE_DIR / _p)]
+    load_dotenv(_dotenv_candidates[0], override=False)
+else:
+    # プロジェクト直下 → api/ → 親フォルダ（例: デスクトップ直下の .env）。未設定キーのみ後続で補う
+    _dotenv_candidates = [
+        BASE_DIR / ".env",
+        BASE_DIR / "api" / ".env",
+        BASE_DIR.parent / ".env",
+    ]
+    for _path in _dotenv_candidates:
+        load_dotenv(_path, override=False)
+
+_openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
+if not _openai_key:
+    _tried = " / ".join(
+        f"{p.resolve()}（存在: {p.is_file()}）" for p in _dotenv_candidates
+    )
+    raise RuntimeError(
+        "OPENAI_API_KEY が設定されていません。"
+        f" 確認した .env: {_tried}。"
+        " 対処: (1) 上記いずれかに `OPENAI_API_KEY=sk-...` と書く（キー名の綴りを確認） "
+        "(2) シェルで環境変数 OPENAI_API_KEY を設定する "
+        "(3) 別の場所なら IMAGE_CHECKER_DOTENV にパスを設定（相対パスはプロジェクトルート基準）"
+    )
+
 app = FastAPI()
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+client = OpenAI(api_key=_openai_key)
 
 JST = timezone(timedelta(hours=9))
 
@@ -28,6 +59,26 @@ AIは校正者として振る舞い、提案や文章改善は行いません。
 ・限定条件 / 注釈の抜け
 ・修正漏れ
 ・薬機法リスクの検知（※判断ではなく検知）
+・内容部分の日本語としての違和感の検知（下記「日本語違和感チェック」）
+
+日本語違和感チェック（広告・販促向け前提）：
+・本コンテンツは広告・販促用のため「体言止め」が多い前提とする。体言止めそのものは誤りとしない。
+・「〜です」「〜ます」への統一は求めない（統一を理由とした指摘は禁止）。
+・次のような場合に限り、明らかに違和感があるときだけ指摘する（軽微・好みの問題は出さない）。
+  - 文法的に不自然な日本語
+  - 助詞の誤用（が / を / に / で など）
+  - 語順の違和感
+  - 意味が曖昧すぎる表現（例：〜な感じ、しっかり、ちゃんと など。ただし広告で意図的に使われていると読み取れる場合は指摘しない）
+  - 冗長な表現
+  - 一般的に使われない言い回し
+  - 読みづらい構文
+・広告表現として一般的な省略は許容する。自然な体言止めはOKとする。
+
+日本語違和感の出力ルール：
+・書き換え案・推奨表現・コピー案は一切出さない（「どこが」「どの語句・構造が」不自然かを文章で具体的に述べるのみ）。
+・指摘は rule_violations または accuracy.warnings のいずれか（または両方）に含める。
+・日本語違和感に関する各文字列は、本文中に必ず「日本語違和感」という語を含める（例：先頭を「日本語違和感：」にする。複数ページ時は【全体N枚目】の直後に続けてよい）。
+・他の種類の指摘と混在させる場合も、日本語違和感であることが文面から分かるように「日本語違和感」を残す。
 
 絶対ルール：
 ・文章を書き換えない
@@ -51,6 +102,7 @@ AIは校正者として振る舞い、提案や文章改善は行いません。
 複数のチェック対象画像があるときは、ユーザーが付与した「チェック画像 全体N枚目」に対応させ、
 fix_points・rule_violations・accuracy.warnings（およびページに紐づく accuracy.matches の各項目）の
 文字列は必ず【全体N枚目】を先頭に付けて、どの画像（ページ）の指摘か分かるようにする。
+日本語違和感も同様に【全体N枚目】を先頭に付け、「日本語違和感」を文面に含める。
 複数ページにまたがる場合は【全体2枚目・3枚目】のようにまとめてよい。画像内の商品名が分かれば
 【全体N枚目｜商品名略】としてもよい。
 
@@ -66,7 +118,9 @@ RESPONSE_SCHEMA_EXAMPLE = {
         "release_date": "",
         "description": ""
     },
-    "rule_violations": ["【全体1枚目】例: 各項目の先頭に【全体◯枚目】を付ける"],
+    "rule_violations": [
+        "【全体1枚目】例: 各項目の先頭に【全体◯枚目】。日本語違和感は本配列または accuracy.warnings に「日本語違和感：」を含めて記載（書き換え案は書かない）"
+    ],
     "accuracy": {
         "matches": [],
         "warnings": []
@@ -227,7 +281,7 @@ def append_result_to_sheet(payload: Dict[str, Any], result: Dict[str, Any]) -> N
             time.sleep(wait)
 
     raise last_error
-BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 @app.get("/")
 def root():
@@ -330,6 +384,7 @@ def check(req: CheckRequest):
 ・fix_points・rule_violations・accuracy.warnings の各要素は、必ず【全体◯枚目】を先頭に付ける（上記の番号を使う）。
 ・accuracy.matches も、どのページの一致か分かるよう必要なら【全体◯枚目】を付ける。
 ・comparison の各フィールドは複数ページの要約でよいが、複数商品がある場合は文中に【全体◯枚目】を入れる。
+・日本語違和感は rule_violations または accuracy.warnings に入れ、各文に「日本語違和感」を含める。書き換え案・推奨表現は書かない。
 """
 
         user_text = f"""
