@@ -300,8 +300,17 @@
     .replaceAll("'", "&#039;");
 }
 
+    /** チェック API のオリジン（プレビュー URL やローカルで HTML を開いても本番 API に送る） */
+    const API_ORIGIN = "https://image-checker-brown.vercel.app";
+
     /** チェック対象画像をこの枚数ずつ API に送る（ペイロード過大による通信エラー対策。通信エラーが出る場合は 3 などに下げる） */
     const CHECK_IMAGE_BATCH_SIZE = 4;
+
+    function apiUrl(path) {
+      const base = String(API_ORIGIN || "").replace(/\/$/, "");
+      const p = path.startsWith("/") ? path : "/" + path;
+      return base ? base + p : p;
+    }
 
     function chunkArray(items, size) {
       const out = [];
@@ -627,7 +636,7 @@ function renderResult(data) {
             mime_type: file.type || "image/png"
           });
         }
-        const res = await fetch("/api/extract-official", {
+        const res = await fetch(apiUrl("/api/extract-official"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ images })
@@ -758,7 +767,7 @@ function renderResult(data) {
             reference_url: referenceUrl
           };
 
-          const res = await fetch("/api/check", {
+          const res = await fetch(apiUrl("/api/check"), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
