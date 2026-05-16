@@ -152,7 +152,7 @@ class ImagePart(BaseModel):
     mime_type: str
 
 
-CheckerName = Literal["山田", "栫", "八尋", "川西", "園田"]
+CheckerName = Literal["山田", "栫", "八尋", "川西", "園田", "かわ", "まゆみ", "とみた"]
 
 
 class CheckRequest(BaseModel):
